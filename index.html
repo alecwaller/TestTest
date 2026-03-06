@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>The Yard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -131,7 +132,97 @@ input,textarea{font-family:inherit;outline:none}
 <body>
 <div id="app"></div>
 <script>
-// ── HELPERS ───────────────────────────────────────────────────
+// ── SUPABASE ──────────────────────────────────────────────────
+var SUPA_URL = 'https://lpfttvzlhximcmtlxglu.supabase.co';
+var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwZnR0dnpsaHhpbWNtdGx4Z2x1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MDIwMzgsImV4cCI6MjA4ODM3ODAzOH0.tNnwW7YNJk_s6jMkx4rU-fQOqW5q2MTTQOIo-M61F4Q';
+var supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// ── AUTH FUNCTIONS ────────────────────────────────────────────
+
+// Sign up a new user
+async function supaSignUp(email, password) {
+  var { data, error } = await supa.auth.signUp({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+// Save profile to profiles table after signup
+async function supaCreateProfile(userId, profile) {
+  var { error } = await supa.from('profiles').upsert({
+    id: userId,
+    name: profile.name || '',
+    email: profile.email || '',
+    school: profile.school || '',
+    major: profile.major || '',
+    grad_year: profile.gradYear || '',
+    skills: (profile.skills || []).join(','),
+    availability: profile.availability || '',
+    avatar_url: profile.avatar || '',
+    bio: profile.bio || '',
+    created_at: new Date().toISOString(),
+  });
+  if (error) throw error;
+}
+
+// Log in existing user
+async function supaLogIn(email, password) {
+  var { data, error } = await supa.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+// Load profile from database
+async function supaLoadProfile(userId) {
+  var { data, error } = await supa.from('profiles').select('*').eq('id', userId).single();
+  if (error) return null;
+  return data;
+}
+
+// Update profile
+async function supaUpdateProfile(userId, profile) {
+  var { error } = await supa.from('profiles').upsert({
+    id: userId,
+    name: profile.name || '',
+    email: profile.email || '',
+    school: profile.school || '',
+    major: profile.major || '',
+    grad_year: profile.gradYear || '',
+    skills: (profile.skills || []).join(','),
+    availability: profile.availability || '',
+    avatar_url: profile.avatar || '',
+    bio: profile.bio || '',
+  });
+  if (error) throw error;
+}
+
+// Check if user is already logged in on app load
+async function supaCheckSession() {
+  var { data } = await supa.auth.getSession();
+  if (data && data.session && data.session.user) {
+    var profile = await supaLoadProfile(data.session.user.id);
+    if (profile) {
+      onboardData.name = profile.name || '';
+      onboardData.email = profile.email || '';
+      onboardData.school = profile.school || '';
+      onboardData.major = profile.major || '';
+      onboardData.gradYear = profile.grad_year || '';
+      onboardData.skills = profile.skills ? profile.skills.split(',').filter(Boolean) : [];
+      onboardData.availability = profile.availability || '';
+      onboardData.avatar = profile.avatar_url || null;
+      onboardData.bio = profile.bio || '';
+      onboardData.userId = data.session.user.id;
+      go('home');
+    }
+  }
+}
+
+// Log out
+async function supaLogOut() {
+  await supa.auth.signOut();
+  onboardData = { name:'', email:'', password:'', school:'', major:'', gradYear:'', skills:[], availability:'', avatar:null, bio:'' };
+}
+
+
 function el(tag, attrs, ...kids) {
   var e = document.createElement(tag);
   if (attrs) Object.entries(attrs).forEach(function([k, v]) {
@@ -706,7 +797,7 @@ function MyProfileScreen() {
   scroll.appendChild(hero);
 
   var stats=el('div',{style:{display:'flex',justifyContent:'space-around',padding:'14px 20px',borderTop:'1px solid #EBEBEB',borderBottom:'1px solid #EBEBEB'}});
-  [{label:'Posts',value:'0'},{label:'Connects',value:'0'},{label:'Collabs',value:'0'}].forEach(function(s){
+  [{label:'Posts',value:String(myPosts.length)},{label:'Connects',value:'0'},{label:'Collabs',value:'0'}].forEach(function(s){
     var col=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center'}});
     col.appendChild(el('span',{style:{fontSize:'18px',fontWeight:'600',color:'#111'}},s.value));
     col.appendChild(el('span',{style:{fontSize:'12px',color:'#8A8A8A'}},s.label));
@@ -730,15 +821,45 @@ function MyProfileScreen() {
 
   // Empty posts state
   var postsSec=el('div',{style:{padding:'0 20px'}});
-  postsSec.appendChild(el('p',{style:{fontSize:'14px',fontWeight:'600',color:'#111',marginBottom:'14px'}},'Your Posts'));
-  var empty=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',padding:'32px 20px',background:'#fff',borderRadius:'14px',border:'1.5px dashed #EBEBEB',textAlign:'center'}});
-  empty.appendChild(el('span',{style:{fontSize:'32px',marginBottom:'10px'}},'🌿'));
-  empty.appendChild(el('p',{style:{fontSize:'14px',fontWeight:'500',color:'#111',marginBottom:'6px'}},'No posts yet'));
-  empty.appendChild(el('p',{style:{fontSize:'13px',color:'#8A8A8A',marginBottom:'16px'}},'Share your skills, projects, or ideas'));
-  var postNowBtn=el('button',{style:{padding:'10px 24px',background:'#111',color:'#fff',borderRadius:'100px',fontSize:'13px',fontWeight:'600',border:'none',cursor:'pointer',fontFamily:'inherit'},onclick:function(){go('create');}});
-  postNowBtn.textContent='+ Post to The Yard';
-  empty.appendChild(postNowBtn);
-  postsSec.appendChild(empty);
+  var postsHdr=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}});
+  postsHdr.appendChild(el('p',{style:{fontSize:'14px',fontWeight:'600',color:'#111'}},'Your Posts'));
+  if(myPosts.length>0){
+    var seeAll=el('button',{style:{fontSize:'13px',color:'#1B6B3A',fontWeight:'500',cursor:'pointer'},onclick:function(){go('myposts');}});
+    seeAll.textContent='See all →';
+    postsHdr.appendChild(seeAll);
+  }
+  postsSec.appendChild(postsHdr);
+
+  if(myPosts.length===0){
+    var empty=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',padding:'32px 20px',background:'#fff',borderRadius:'14px',border:'1.5px dashed #EBEBEB',textAlign:'center'}});
+    empty.appendChild(el('span',{style:{fontSize:'32px',marginBottom:'10px'}},'🌿'));
+    empty.appendChild(el('p',{style:{fontSize:'14px',fontWeight:'500',color:'#111',marginBottom:'6px'}},'No posts yet'));
+    empty.appendChild(el('p',{style:{fontSize:'13px',color:'#8A8A8A',marginBottom:'16px'}},'Share your skills, projects, or ideas'));
+    var postNowBtn=el('button',{style:{padding:'10px 24px',background:'#111',color:'#fff',borderRadius:'100px',fontSize:'13px',fontWeight:'600',border:'none',cursor:'pointer',fontFamily:'inherit'},onclick:function(){go('create');}});
+    postNowBtn.textContent='+ Post to The Yard';
+    empty.appendChild(postNowBtn);
+    postsSec.appendChild(empty);
+  } else {
+    // Show 2 most recent posts as preview cards
+    myPosts.slice(0,2).forEach(function(post){
+      var pCard=el('div',{style:{background:'#fff',borderRadius:'12px',padding:'14px',marginBottom:'10px',boxShadow:'0 1px 6px rgba(0,0,0,.06)',display:'flex',alignItems:'center',gap:'12px',cursor:'pointer'},onclick:function(){go('myposts');}});
+      var typeIcon=el('div',{style:{width:'40px',height:'40px',borderRadius:'10px',background:post.typeColor+'15',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:'0',fontSize:'18px'}});
+      var typeEmojis={skills:'🎯',project:'🚀',collab:'🤝',event:'🎉'};
+      typeIcon.textContent=typeEmojis[post.type]||'📌';
+      pCard.appendChild(typeIcon);
+      var pInfo=el('div',{style:{flex:'1',minWidth:'0'}});
+      pInfo.appendChild(el('p',{style:{fontSize:'13px',fontWeight:'600',color:'#111',marginBottom:'2px'}},post.typeLabel+' Post'));
+      pInfo.appendChild(el('p',{style:{fontSize:'12px',color:'#8A8A8A'}},post.likes+' likes · '+post.time));
+      pCard.appendChild(pInfo);
+      pCard.innerHTML+='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#C0C0C0" stroke-width="1.8" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>';
+      postsSec.appendChild(pCard);
+    });
+    if(myPosts.length>2){
+      var moreBtn=el('button',{style:{width:'100%',padding:'12px',background:'#F7F6F3',border:'1px solid #EBEBEB',borderRadius:'12px',fontSize:'13px',fontWeight:'500',color:'#1B6B3A',cursor:'pointer',fontFamily:'inherit'},onclick:function(){go('myposts');}});
+      moreBtn.textContent='View all '+myPosts.length+' posts →';
+      postsSec.appendChild(moreBtn);
+    }
+  }
   scroll.appendChild(postsSec);
   wrap.appendChild(scroll);
   wrap.appendChild(BottomNav());
@@ -843,7 +964,25 @@ function CreateScreen() {
 
   // Submit bar
   var submitBar=el('div',{style:{position:'absolute',bottom:'0',left:'0',right:'0',padding:'12px 20px 32px',background:'rgba(247,246,243,.97)',backdropFilter:'blur(12px)',borderTop:'1px solid #EBEBEB'}});
-  var submitBtn=el('button',{style:{width:'100%',padding:'16px',background:'#111',color:'#fff',fontSize:'15px',fontWeight:'600',borderRadius:'14px',border:'none',cursor:'pointer'},onclick:function(){showSuccess();}}, 'Post to The Yard');
+  var submitBtn=el('button',{style:{width:'100%',padding:'16px',background:'#111',color:'#fff',fontSize:'15px',fontWeight:'600',borderRadius:'14px',border:'none',cursor:'pointer'},onclick:function(){
+    // Save post to user's posts
+    var typeLabels={skills:'My Skills',project:'Project',collab:'Collab',event:'Event'};
+    var typeColors={skills:'#1B6B3A',project:'#0A5A8A',collab:'#7A3FC0',event:'#B85C00'};
+    myPosts.unshift({
+      id: Date.now(),
+      type: currentType,
+      typeLabel: typeLabels[currentType]||currentType,
+      typeColor: typeColors[currentType]||'#111',
+      name: myName(),
+      school: mySchool()+myGradYear(),
+      avatar: myAva(),
+      time: 'Just now',
+      likes: 0,
+      comments: 0,
+      liked: false,
+    });
+    showSuccess();
+  }}, 'Post to The Yard');
   submitBar.appendChild(submitBtn);
   wrap.appendChild(submitBar);
 
@@ -957,13 +1096,17 @@ function CreateScreen() {
     s.appendChild(el('p',{style:{fontSize:'14px',color:'#8A8A8A',lineHeight:'1.65',marginBottom:'36px'}},m.sub));
     var homeBtn=el('button',{style:{width:'100%',padding:'16px',background:'#111',color:'#fff',fontSize:'15px',fontWeight:'600',borderRadius:'12px',border:'none',cursor:'pointer',marginBottom:'12px'},onclick:function(){go('home');}},'Back to The Yard');
     s.appendChild(homeBtn);
-    s.appendChild(el('button',{style:{fontSize:'14px',color:'#1B6B3A',fontWeight:'500',padding:'8px 0'}},'View My Post'));
+    var viewBtn=el('button',{style:{fontSize:'14px',color:'#1B6B3A',fontWeight:'500',padding:'8px 0'},onclick:function(){go('myposts');}});
+    viewBtn.textContent='View My Posts';
+    s.appendChild(viewBtn);
     formArea.appendChild(s);
   }
 
   selectType('skills');
   return wrap;
 }
+
+var myPosts = []; // stores posts the current user creates
 
 // ── GLOBAL OVERLAY HELPERS ────────────────────────────────────
 var activeOverlay = null;
@@ -1376,7 +1519,7 @@ function ObAccountScreen(){
   }});
   nextBtn.textContent='Continue';
   footer.appendChild(nextBtn);
-  footer.appendChild(el('p',{style:{fontSize:'13px',color:'#8A8A8A',textAlign:'center',marginTop:'12px'}},'Already have an account? ',el('button',{style:{color:'#1B6B3A',fontWeight:'600',fontSize:'13px',cursor:'pointer'}},'Log In')));
+  footer.appendChild(el('p',{style:{fontSize:'13px',color:'#8A8A8A',textAlign:'center',marginTop:'12px'}},'Already have an account? ',el('button',{style:{color:'#1B6B3A',fontWeight:'600',fontSize:'13px',cursor:'pointer'},onclick:function(){go('login');}},'Log In')));
   wrap.appendChild(footer);
   return wrap;
 }
@@ -1675,8 +1818,24 @@ function ObPreviewScreen(){
   wrap.appendChild(scroll);
 
   var footer=el('div',{style:{position:'absolute',bottom:'0',left:'0',right:'0',padding:'16px 24px 40px',background:'rgba(247,246,243,.97)',backdropFilter:'blur(12px)',borderTop:'1px solid #EBEBEB'}});
-  var goBtn=el('button',{class:'ob-btn green',onclick:function(){state.nav='explore';go('explore');}});
+  var goBtn=el('button',{class:'ob-btn green'});
   goBtn.textContent='🌿  Go to The Yard';
+  goBtn.addEventListener('click', async function(){
+    goBtn.textContent='Creating account...';
+    goBtn.style.opacity='0.7';
+    goBtn.disabled=true;
+    try {
+      var data = await supaSignUp(onboardData.email, onboardData.password);
+      if(data && data.user) {
+        onboardData.userId = data.user.id;
+        await supaCreateProfile(data.user.id, onboardData);
+      }
+    } catch(e) {
+      console.warn('Supabase signup:', e.message);
+      // Continue anyway — works offline too
+    }
+    state.nav='explore'; go('explore');
+  });
   footer.appendChild(goBtn);
   wrap.appendChild(footer);
   return wrap;
@@ -1928,12 +2087,16 @@ function EditProfileScreen(){
   var footer2=el('div',{style:{position:'absolute',bottom:'0',left:'0',right:'0',padding:'12px 20px 32px',background:'rgba(247,246,243,.97)',backdropFilter:'blur(12px)',borderTop:'1px solid #EBEBEB'}});
   var saveBig=el('button',{style:{width:'100%',padding:'16px',background:'#111',color:'#fff',fontSize:'15px',fontWeight:'600',borderRadius:'14px',border:'none',cursor:'pointer',fontFamily:'inherit',transition:'all .2s'}});
   saveBig.textContent='Save Changes';
-  saveBig.addEventListener('click',function(){
+  saveBig.addEventListener('click', async function(){
     onboardData.name=(fnIn2.value.trim()+' '+lnIn2.value.trim()).trim();
     onboardData.bio=bioIn.value;
     onboardData.school=schSel2.value;
     onboardData.major=majSel2.value;
-    saveBig.textContent='✓ Saved!';saveBig.style.background='#1B6B3A';
+    saveBig.textContent='Saving...'; saveBig.style.opacity='0.7';
+    try {
+      if(onboardData.userId) await supaUpdateProfile(onboardData.userId, onboardData);
+    } catch(e){ console.warn('Profile update:', e.message); }
+    saveBig.textContent='✓ Saved!'; saveBig.style.background='#1B6B3A'; saveBig.style.opacity='1';
     setTimeout(function(){go('myprofile');},900);
   });
   saveBtn.addEventListener('click',function(){saveBig.click();});
@@ -2030,9 +2193,8 @@ function SettingsScreen(){
     sheet2.appendChild(el('p',{style:{fontSize:'14px',color:'#8A8A8A',textAlign:'center',marginBottom:'24px'}},'You\'ll need to sign in again to access The Yard.'));
     var confirmLogout=el('button',{style:{width:'100%',padding:'15px',background:'#E53E3E',color:'#fff',borderRadius:'14px',fontSize:'15px',fontWeight:'600',border:'none',cursor:'pointer',fontFamily:'inherit',marginBottom:'10px'}});
     confirmLogout.textContent='Yes, Log Out';
-    confirmLogout.addEventListener('click',function(){
-      // Reset user data
-      onboardData={name:'',email:'',password:'',school:'',major:'',gradYear:'',skills:[],availability:'',avatar:null,bio:''};
+    confirmLogout.addEventListener('click', async function(){
+      await supaLogOut();
       go('welcome');
     });
     var cancel2=el('button',{style:{width:'100%',padding:'15px',background:'#F0F0F0',color:'#111',borderRadius:'14px',fontSize:'15px',fontWeight:'600',border:'none',cursor:'pointer',fontFamily:'inherit'}});
@@ -2121,19 +2283,137 @@ function LoginScreen(){
   var footer3=el('div',{style:{padding:'12px 24px 40px',flexShrink:'0'}});
   var loginBtn2=el('button',{style:{width:'100%',padding:'16px',background:'#111',color:'#fff',fontSize:'15px',fontWeight:'600',borderRadius:'14px',border:'none',cursor:'pointer',fontFamily:'inherit',marginBottom:'14px'}});
   loginBtn2.textContent='Log In';
-  loginBtn2.addEventListener('click',function(){
+  loginBtn2.addEventListener('click', async function(){
     if(!emailIn2.value||!passIn2.value){errMsg.style.display='block';return;}
-    // Simulate login — in real app this hits Supabase
-    onboardData.email=emailIn2.value;
-    onboardData.name=onboardData.name||'Alex Johnson';
-    onboardData.school=onboardData.school||'Howard University';
-    onboardData.skills=onboardData.skills.length?onboardData.skills:['Design','React','Figma'];
-    onboardData.availability=onboardData.availability||'collabs';
-    go('home');
+    loginBtn2.textContent='Logging in...';
+    loginBtn2.style.opacity='0.7';
+    loginBtn2.disabled=true;
+    try {
+      var data = await supaLogIn(emailIn2.value, passIn2.value);
+      if(data && data.user) {
+        onboardData.userId = data.user.id;
+        onboardData.email = data.user.email;
+        var profile = await supaLoadProfile(data.user.id);
+        if(profile) {
+          onboardData.name = profile.name || '';
+          onboardData.school = profile.school || '';
+          onboardData.major = profile.major || '';
+          onboardData.gradYear = profile.grad_year || '';
+          onboardData.skills = profile.skills ? profile.skills.split(',').filter(Boolean) : [];
+          onboardData.availability = profile.availability || '';
+          onboardData.avatar = profile.avatar_url || null;
+          onboardData.bio = profile.bio || '';
+        }
+        go('home');
+      }
+    } catch(e) {
+      errMsg.style.display='block';
+      errMsg.querySelector('p').textContent = e.message || 'Invalid email or password.';
+      loginBtn2.textContent='Log In';
+      loginBtn2.style.opacity='1';
+      loginBtn2.disabled=false;
+    }
   });
   footer3.appendChild(loginBtn2);
   footer3.appendChild(el('p',{style:{fontSize:'13px',color:'#8A8A8A',textAlign:'center'}},"Don't have an account? ",el('button',{style:{color:'#1B6B3A',fontWeight:'600',fontSize:'13px',cursor:'pointer'},onclick:function(){go('ob-account');}},'Sign Up')));
   wrap.appendChild(footer3);
+  return wrap;
+}
+
+// ── MY POSTS SCREEN ───────────────────────────────────────────
+function MyPostsScreen(){
+  var wrap=el('div',{style:{display:'flex',flexDirection:'column',height:'100%',background:'#F7F6F3'}});
+  wrap.appendChild(StatusBar());
+
+  var topBar=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 20px 14px',flexShrink:'0'}});
+  var backBtn=el('button',{style:{width:'36px',height:'36px',display:'flex',alignItems:'center',justifyContent:'center'},onclick:function(){go('myprofile');}});
+  backBtn.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+  topBar.appendChild(backBtn);
+  topBar.appendChild(el('span',{style:{fontSize:'18px',fontWeight:'600',color:'#111'}},'My Posts'));
+  var newPostBtn=el('button',{style:{fontSize:'13px',fontWeight:'600',color:'#fff',background:'#111',padding:'7px 16px',borderRadius:'100px',border:'none',cursor:'pointer',fontFamily:'inherit'},onclick:function(){go('create');}});
+  newPostBtn.textContent='+ New';
+  topBar.appendChild(newPostBtn);
+  wrap.appendChild(topBar);
+
+  var scroll=el('div',{class:'scroll',style:{padding:'0 16px 100px'}});
+
+  if(myPosts.length===0){
+    // Empty state
+    var empty=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'60px 20px',textAlign:'center'}});
+    empty.appendChild(el('div',{style:{fontSize:'52px',marginBottom:'16px'}},'🌿'));
+    empty.appendChild(el('h3',{style:{fontSize:'20px',fontWeight:'600',color:'#111',marginBottom:'8px'}},'No posts yet'));
+    empty.appendChild(el('p',{style:{fontSize:'14px',color:'#8A8A8A',lineHeight:'1.6',marginBottom:'28px',maxWidth:'240px'}},'Share your skills, drop a project, or post a collab idea — your first post is the hardest.'));
+    var firstPostBtn=el('button',{style:{padding:'14px 32px',background:'#111',color:'#fff',borderRadius:'14px',fontSize:'15px',fontWeight:'600',border:'none',cursor:'pointer',fontFamily:'inherit'},onclick:function(){go('create');}});
+    firstPostBtn.textContent='Make Your First Post';
+    empty.appendChild(firstPostBtn);
+    scroll.appendChild(empty);
+  } else {
+    // Stats bar
+    var statsBar=el('div',{style:{display:'flex',gap:'10px',marginBottom:'16px',paddingTop:'4px'}});
+    [{v:myPosts.length,l:'Posts'},{v:myPosts.reduce(function(a,p){return a+p.likes;},0),l:'Likes'},{v:myPosts.reduce(function(a,p){return a+p.comments;},0),l:'Comments'}].forEach(function(s){
+      var card=el('div',{style:{flex:'1',background:'#fff',borderRadius:'12px',padding:'12px',textAlign:'center',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}});
+      card.appendChild(el('p',{style:{fontSize:'20px',fontWeight:'600',color:'#111'}},String(s.v)));
+      card.appendChild(el('p',{style:{fontSize:'11px',color:'#8A8A8A',marginTop:'2px'}},s.l));
+      statsBar.appendChild(card);
+    });
+    scroll.appendChild(statsBar);
+
+    // Post cards
+    myPosts.forEach(function(post){
+      var card=el('div',{style:{background:'#fff',borderRadius:'14px',overflow:'hidden',boxShadow:'0 1px 8px rgba(0,0,0,.07)',marginBottom:'14px'}});
+
+      // Card header
+      var hdr=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'14px 14px 10px'}});
+      var avaDiv=el('div',{style:{width:'40px',height:'40px',borderRadius:'50%',overflow:'hidden',flexShrink:'0'}});
+      avaDiv.appendChild(el('img',{src:post.avatar,style:{width:'100%',height:'100%',objectFit:'cover'}}));
+      hdr.appendChild(avaDiv);
+      var hInfo=el('div',{style:{flex:'1'}});
+      hInfo.appendChild(el('p',{style:{fontSize:'14px',fontWeight:'600',color:'#111'}},post.name));
+      hInfo.appendChild(el('p',{style:{fontSize:'12px',color:'#8A8A8A'}},post.school+' · '+post.time));
+      hdr.appendChild(hInfo);
+
+      // Type badge
+      var badge=el('span',{style:{fontSize:'11px',fontWeight:'600',padding:'4px 10px',borderRadius:'100px',background:post.typeColor+'15',color:post.typeColor}},post.typeLabel);
+      hdr.appendChild(badge);
+      card.appendChild(hdr);
+
+      // Divider
+      card.appendChild(el('div',{style:{height:'1px',background:'#F5F5F5',margin:'0 14px'}}));
+
+      // Actions row
+      var acts=el('div',{style:{display:'flex',alignItems:'center',gap:'16px',padding:'12px 14px'}});
+
+      // Like
+      var liked={v:post.liked};
+      var likeBtn=el('button',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'13px',color:liked.v?'#E53E3E':'#8A8A8A',fontWeight:'500',fontFamily:'inherit',transition:'color .15s'}});
+      function renderLike(){likeBtn.innerHTML='';likeBtn.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="'+(liked.v?'#E53E3E':'none')+'" stroke="'+(liked.v?'#E53E3E':'#8A8A8A')+'" stroke-width="1.8" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';likeBtn.appendChild(document.createTextNode(' '+post.likes));}
+      renderLike();
+      likeBtn.addEventListener('click',function(){liked.v=!liked.v;post.liked=liked.v;post.likes+=liked.v?1:-1;renderLike();likeBtn.style.color=liked.v?'#E53E3E':'#8A8A8A';});
+      acts.appendChild(likeBtn);
+
+      // Comments
+      var cmtBtn=el('button',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'13px',color:'#8A8A8A',fontWeight:'500',fontFamily:'inherit'}});
+      cmtBtn.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#8A8A8A" stroke-width="1.8" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> '+post.comments;
+      acts.appendChild(cmtBtn);
+
+      acts.appendChild(el('div',{style:{flex:'1'}}));
+
+      // Delete button
+      var delBtn=el('button',{style:{display:'flex',alignItems:'center',gap:'5px',fontSize:'12px',color:'#C0C0C0',fontWeight:'500',fontFamily:'inherit',padding:'4px 8px',borderRadius:'8px',border:'1px solid #EBEBEB',background:'#fff'}});
+      delBtn.innerHTML='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#C0C0C0" stroke-width="1.8" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg> Delete';
+      delBtn.addEventListener('click',function(){
+        myPosts=myPosts.filter(function(p){return p.id!==post.id;});
+        card.style.opacity='0';card.style.transform='scale(.95)';card.style.transition='all .2s';
+        setTimeout(function(){if(card.parentNode)card.parentNode.removeChild(card);},200);
+      });
+      acts.appendChild(delBtn);
+      card.appendChild(acts);
+      scroll.appendChild(card);
+    });
+  }
+
+  wrap.appendChild(scroll);
+  wrap.appendChild(BottomNav());
   return wrap;
 }
 
@@ -2153,13 +2433,14 @@ var SCREENS={
   editprofile:EditProfileScreen,
   notifications:NotificationsScreen,
   settings:SettingsScreen,
+  myposts:MyPostsScreen,
   create:CreateScreen,messages:MessagesScreen,chat:function(){return ChatScreen(state.post||CONVOS[0]);}
 };
 var SLIDE_DIR={
   welcome:'left',login:'right',
   'ob-account':'right','ob-identity':'right','ob-skills':'right','ob-availability':'right','ob-photo':'right','ob-preview':'right',
   home:'left',explore:'left',fullscreen:'right',postdetail:'right',
-  myprofile:'right',profile:'right',editprofile:'right',notifications:'right',settings:'right',
+  myprofile:'right',profile:'right',editprofile:'right',notifications:'right',settings:'right',myposts:'right',
   create:'bottom',messages:'left',chat:'right'
 };
 var screenEls={};
@@ -2189,6 +2470,8 @@ function render(){
 }
 
 render();
+// Auto-login returning users
+supaCheckSession();
 </script>
 </body>
 </html>
